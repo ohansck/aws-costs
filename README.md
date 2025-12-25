@@ -11,14 +11,14 @@
 - **📅 Automated Scheduling**: Daily (8 AM UTC), weekly (Mondays), and monthly (1st of month) reports
 - **🔔 Flexible Notifications**:
   - Send to webhook endpoints (n8n, Zapier, custom APIs)
-  - Send HTML-formatted emails via Amazon SNS
+  - Send plain text emails via Amazon SNS
   - Both webhook and email are optional - use what you need!
 - **💾 Historical Storage**: All reports saved to S3 with 365-day retention
 - **🌍 Multi-Region**: Automatic cost breakdown by AWS service and region
 - **🚀 Manual Triggers**: On-demand reports via secured REST API
 - **🔐 API Key Security**: Native API Gateway key authentication with usage plans
 - **💳 Credits Tracking**: Separate tracking of usage costs vs. AWS promotional credits
-- **📈 Beautiful Reports**: HTML emails with color-coded costs and responsive design
+- **📈 Readable Reports**: Well-formatted plain text emails with organized cost breakdowns
 - **⚡ Rate Limiting**: 5 requests/second throttling + 1000 requests/month quota
 - **💰 Cost-Effective**: ~$3/month estimated operational cost (free with AWS free tier)
 
@@ -393,16 +393,15 @@ Reports are retained for 365 days with automatic lifecycle management.
 
 ### Email Format
 
-HTML emails include:
+Plain text emails include:
 
-- **Total Cost**: Large, prominently displayed
-- **Period Summary**: Date range and report type
-- **Service Breakdown**: Sortable table by cost
-- **Color Coding**:
-  - 🟢 Green: < $10
-  - 🟡 Yellow: $10-$100
-  - 🔴 Red: > $100
-- **Responsive Design**: Mobile-friendly
+- **Period Summary**: Report type and date range
+- **Cost Summary**: Total usage cost, credits applied, and net amount
+- **Service Breakdown**: Sorted by cost (highest to lowest)
+- **Region Details**: For each service, costs broken down by AWS region
+- **ASCII Formatting**: Clean, readable layout with section dividers
+
+**Note**: Plain text format ensures compatibility with all email clients, including Amazon SNS email subscriptions which don't support HTML rendering.
 
 ### Webhook Payload
 

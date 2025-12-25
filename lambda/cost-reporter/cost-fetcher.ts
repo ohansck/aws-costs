@@ -53,6 +53,10 @@ function getDateRangeForPeriod(period: ReportPeriod, isScheduledEvent: boolean =
         };
       }
     }
+
+    default: {
+      throw new Error(`Invalid period: ${period}. Expected 'day', 'week', or 'month'.`);
+    }
   }
 }
 
@@ -144,7 +148,7 @@ export async function fetchCostReport(period: ReportPeriod, isScheduledEvent: bo
     region: item.region,
     recordType: 'Usage' as RecordType,
     cost: {
-      amount: item.amount.toString(),
+      amount: item.amount.toFixed(10).replace(/\.?0+$/, ''),
       unit: item.unit,
     },
   }));
@@ -173,7 +177,7 @@ export async function fetchCostReport(period: ReportPeriod, isScheduledEvent: bo
     service: item.service,
     region: item.region,
     creditAmount: {
-      amount: item.amount.toString(),
+      amount: item.amount.toFixed(10).replace(/\.?0+$/, ''),
       unit: item.unit,
     },
   }));

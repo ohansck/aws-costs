@@ -8,12 +8,14 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigatewayv2Integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import * as apigatewayv2Authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import { Construct } from 'constructs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 export interface AwsCostsStackProps extends cdk.StackProps {
   webhookEndpoint?: string;
@@ -101,6 +103,50 @@ export class AwsCostsStack extends cdk.Stack {
       })
     );
 
+    // Generate initial API key
+    const generateApiKey = (): string => {
+      const prefix = 'ak_live_';
+      const randomBytes = crypto.randomBytes(24).toString('base64url');
+      return prefix + randomBytes;
+    };
+
+    const initialApiKey = generateApiKey();
+
+    // Create API Key Authorizer Lambda
+    const apiKeyAuthorizerFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'ApiKeyAuthorizerFunction',
+      {
+        functionName: 'aws-cost-reporter-api-key-authorizer',
+        runtime: lambda.Runtime.NODEJS_22_X,
+        architecture: lambda.Architecture.ARM_64,
+        entry: path.join(__dirname, '../lambda/api-key-authorizer/index.ts'),
+        handler: 'handler',
+        timeout: cdk.Duration.seconds(5),
+        memorySize: 256,
+        environment: {
+          API_KEYS: initialApiKey, // Comma-separated list of valid API keys
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['@aws-sdk/*'],
+          target: 'es2022',
+        },
+      }
+    );
+
+    // Create Lambda Authorizer
+    const lambdaAuthorizer = new apigatewayv2Authorizers.HttpLambdaAuthorizer(
+      'ApiKeyAuthorizer',
+      apiKeyAuthorizerFunction,
+      {
+        authorizerName: 'api-key-authorizer',
+        identitySource: ['$request.header.x-api-key'],
+        responseTypes: [apigatewayv2Authorizers.HttpLambdaResponseType.SIMPLE],
+        resultsCacheTtl: cdk.Duration.minutes(5),
+      }
+    );
+
     const dailyRule = new events.Rule(this, 'DailyCostReportRule', {
       ruleName: 'daily-cost-report',
       description: 'Trigger daily AWS cost report at 8 AM UTC',
@@ -179,7 +225,7 @@ export class AwsCostsStack extends cdk.Stack {
       corsPreflight: {
         allowOrigins: ['*'],
         allowMethods: [apigatewayv2.CorsHttpMethod.POST],
-        allowHeaders: ['Content-Type'],
+        allowHeaders: ['Content-Type', 'x-api-key'],
       },
     });
 
@@ -193,7 +239,17 @@ export class AwsCostsStack extends cdk.Stack {
       path: '/report',
       methods: [apigatewayv2.HttpMethod.POST],
       integration: lambdaIntegration,
+      authorizer: lambdaAuthorizer,
     });
+
+    // Add throttling to prevent abuse
+    const cfnStage = httpApi.defaultStage?.node.defaultChild as apigatewayv2.CfnStage;
+    if (cfnStage) {
+      cfnStage.defaultRouteSettings = {
+        throttlingRateLimit: 5,
+        throttlingBurstLimit: 10,
+      };
+    }
 
     const dlqAlarm = dlq
       .metricApproximateNumberOfMessagesVisible()
@@ -230,6 +286,11 @@ export class AwsCostsStack extends cdk.Stack {
       value: costReporterFunction.functionName,
       description: 'Cost reporter Lambda function name',
       exportName: 'CostReporterFunctionName',
+    });
+
+    new cdk.CfnOutput(this, 'InitialApiKey', {
+      value: initialApiKey,
+      description: 'Initial API key (save this, it will not be shown again)',
     });
   }
 }

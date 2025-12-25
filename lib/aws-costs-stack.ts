@@ -187,11 +187,6 @@ export class AwsCostsStack extends cdk.Stack {
     const restApi = new apigateway.RestApi(this, "CostReportApi", {
       restApiName: `cost-report-api-${uniqueId}`,
       description: "API for manually triggering AWS cost reports",
-      defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: ["POST", "OPTIONS"],
-        allowHeaders: ["Content-Type", "X-Api-Key"],
-      },
       deployOptions: {
         stageName: "prod",
         throttlingRateLimit: 5,

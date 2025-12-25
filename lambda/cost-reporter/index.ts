@@ -23,10 +23,30 @@ function parseEvent(
   }
 
   if ('body' in event) {
-    const body = JSON.parse(event.body || '{}');
+    // Wrap JSON.parse in try-catch to handle malformed input
+    let body: any;
+    try {
+      body = JSON.parse(event.body || '{}');
+    } catch (e) {
+      throw new Error('Invalid JSON in request body');
+    }
+
+    // Validate period parameter
+    const validPeriods: ReportPeriod[] = ['day', 'week', 'month'];
+    const period = validPeriods.includes(body.period) ? body.period : 'day';
+
+    // Validate email format if provided
+    const email = body.email;
+    if (email && typeof email === 'string') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Invalid email format');
+      }
+    }
+
     return {
-      period: body.period || 'day',
-      email: body.email,
+      period,
+      email: email || undefined,
     };
   }
 
@@ -40,8 +60,10 @@ export const handler = async (
     const { period, email } = parseEvent(event);
     const isScheduledEvent = 'source' in event && event.source === 'aws.events';
 
+    // Redact email address in logs for privacy
+    const redactedEmail = email ? email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : 'none';
     console.log(`Processing ${period} cost report`, {
-      email: email || 'none',
+      email: redactedEmail,
       source: isScheduledEvent ? 'scheduled' : 'manual API'
     });
 
@@ -103,12 +125,19 @@ export const handler = async (
       },
     };
   } catch (error) {
+    // Log full error details for debugging (in CloudWatch)
     console.error('Error processing cost report:', error);
+
+    // Return generic error message to client (don't leak internal details)
+    const isValidationError = error instanceof Error &&
+      (error.message.includes('Invalid') || error.message.includes('Unknown event type'));
+
     return {
-      statusCode: 500,
+      statusCode: isValidationError ? 400 : 500,
       body: JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: isValidationError ? error.message : 'Internal server error',
+        // Include a correlation ID for debugging (if available in context)
       }),
       headers: {
         'Content-Type': 'application/json',

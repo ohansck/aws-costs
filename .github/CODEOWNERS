@@ -1,0 +1,23 @@
+# This file defines code ownership for the AWS Cost Reporter project.
+# Each line is a file pattern followed by one or more owners.
+# Owners will be automatically requested for review when a pull request
+# modifies files matching the pattern.
+
+# Default owner for everything in the repo
+* @ohansck
+
+# Infrastructure and deployment
+/lib/** @ohansck
+/bin/** @ohansck
+cdk.json @ohansck
+package.json @ohansck
+
+# Lambda functions
+/lambda/** @ohansck
+
+# Documentation
+README.md @ohansck
+/docs/** @ohansck
+
+# GitHub workflows
+/.github/** @ohansck

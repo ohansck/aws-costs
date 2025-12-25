@@ -1,6 +1,6 @@
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { fetchCostReport } from './cost-fetcher';
-import { formatCostReportAsHTML } from './email-formatter';
+import { formatCostReportAsPlainText } from './email-formatter';
 import { saveCostReportToS3 } from './storage';
 import { sendToWebhook } from './webhook';
 import {
@@ -65,29 +65,28 @@ export const handler = async (
     }
 
     let emailSent = false;
-    if (email && process.env.SNS_TOPIC_ARN) {
+    const snsTopicArn = process.env.SNS_TOPIC_ARN;
+
+    // Send email for scheduled events OR when email is explicitly provided
+    if ((isScheduledEvent || email) && snsTopicArn) {
       try {
-        const htmlContent = formatCostReportAsHTML(report);
+        const plainTextContent = formatCostReportAsPlainText(report);
         await sns.send(
           new PublishCommand({
-            TopicArn: process.env.SNS_TOPIC_ARN,
+            TopicArn: snsTopicArn,
             Subject: `AWS Cost Report - ${report.period} (${report.startDate})`,
-            Message: htmlContent,
-            MessageAttributes: {
-              'Content-Type': {
-                DataType: 'String',
-                StringValue: 'text/html',
-              },
-            },
+            Message: plainTextContent,
           })
         );
-        console.log(`Sent email notification via SNS`);
+        console.log(`Sent email notification via SNS to topic subscribers`);
         emailSent = true;
       } catch (error) {
         console.error('Failed to send email:', error);
       }
-    } else if (email && !process.env.SNS_TOPIC_ARN) {
+    } else if (email && !snsTopicArn) {
       console.log('Email requested but SNS_TOPIC_ARN not configured');
+    } else if (isScheduledEvent && !snsTopicArn) {
+      console.log('Scheduled event triggered but SNS_TOPIC_ARN not configured');
     }
 
     return {

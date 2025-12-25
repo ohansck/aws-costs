@@ -8,9 +8,11 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
+    "test:local": "ts-node test-local.ts",
     "cdk": "cdk"
   },
   "devDependencies": {
+    "@types/aws-lambda": "^8.10.159",
     "@types/jest": "^29.5.14",
     "@types/node": "^24.10.1",
     "aws-cdk": "2.1100.1",

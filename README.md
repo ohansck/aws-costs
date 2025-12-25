@@ -15,11 +15,11 @@
   - Both webhook and email are optional - use what you need!
 - **💾 Historical Storage**: All reports saved to S3 with 365-day retention
 - **🌍 Multi-Region**: Automatic cost breakdown by AWS service and region
-- **🚀 Manual Triggers**: On-demand reports via secured HTTP API
-- **🔐 API Key Security**: Lambda authorizer with result caching (5-minute TTL)
+- **🚀 Manual Triggers**: On-demand reports via secured REST API
+- **🔐 API Key Security**: Native API Gateway key authentication with usage plans
 - **💳 Credits Tracking**: Separate tracking of usage costs vs. AWS promotional credits
 - **📈 Beautiful Reports**: HTML emails with color-coded costs and responsive design
-- **⚡ Rate Limiting**: 5 requests/second throttling to prevent abuse
+- **⚡ Rate Limiting**: 5 requests/second throttling + 1000 requests/month quota
 - **💰 Cost-Effective**: ~$3/month estimated operational cost (free with AWS free tier)
 
 ## 🏗️ Architecture
@@ -30,19 +30,19 @@
 │  Schedules  │  │  Daily, Weekly, Monthly (Bypass API Gateway)
 └─────────────┘  │
                  │
-┌─────────────┐  │    ┌──────────────┐      ┌──────────────┐
-│  API Gateway│──┼───▶│   Lambda     │─────▶│    Lambda    │
-│  (Manual)   │  │    │  Authorizer  │ ✓/✗  │   Function   │
-│ + API Key   │  │    │ (API Key)    │      │ Cost Reporter│
-└─────────────┘  │    └──────────────┘      └──────┬───────┘
-                 │                                  │
-                 │                                  ├──▶ Cost Explorer API
-                 │                                  │
-                 │                                  ├──▶ S3 Bucket (Reports)
-                 │                                  │
-                 │                                  ├──▶ Webhook (Optional)
-                 │                                  │
-                 │                                  └──▶ SNS → Email (Optional)
+┌─────────────┐  │         ┌──────────────┐
+│ REST API GW │──┼────────▶│    Lambda    │
+│  (Manual)   │  │  ✓/✗    │   Function   │
+│ + API Key   │  │ (Auth)  │ Cost Reporter│
+└─────────────┘  │         └──────┬───────┘
+                 │                │
+                 │                ├──▶ Cost Explorer API
+                 │                │
+                 │                ├──▶ S3 Bucket (Reports)
+                 │                │
+                 │                ├──▶ Webhook (Optional)
+                 │                │
+                 │                └──▶ SNS → Email (Optional)
 ```
 
 ## 🚀 Quick Start
@@ -153,6 +153,36 @@
      --context notificationEmail=your@email.com
    ```
 
+## 🔑 Finding Your Stack's Unique ID
+
+All resources in this stack include a unique 8-character identifier (e.g., `abc12de3`) that remains stable across deployments. You can find it in several ways:
+
+### Method 1: From Stack Outputs (Recommended)
+```bash
+# Get any output that includes resource names
+aws cloudformation describe-stacks \
+  --stack-name AwsCostsStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
+  --output text
+# Example output: aws-cost-reports-abc12de3
+# The unique ID is: abc12de3
+```
+
+### Method 2: From AWS Console
+1. Check any resource name in API Gateway, Lambda, or S3
+2. Look for the suffix after the last hyphen (e.g., `aws-cost-reporter-abc12de3` → `abc12de3`)
+
+### Method 3: From CloudFormation Resources
+```bash
+aws cloudformation describe-stack-resources \
+  --stack-name AwsCostsStack \
+  --logical-resource-id CostReporterFunction \
+  --query 'StackResources[0].PhysicalResourceId' \
+  --output text
+```
+
+Once you have your unique ID, use it to replace `{unique-id}` in commands throughout this documentation.
+
 ## ⚙️ Configuration
 
 ### Environment Variables / CDK Context
@@ -178,18 +208,26 @@ To change the schedule, modify the cron expressions in [`lib/aws-costs-stack.ts`
 
 ## 📡 Manual Triggers
 
-Use the HTTP API to trigger reports on-demand. **Note:** API key authentication is required.
+Use the REST API to trigger reports on-demand. **Note:** API key authentication is required.
 
 ```bash
-# Get the API endpoint and API key from stack outputs
+# Get the API endpoint from stack outputs
 API_ENDPOINT=$(aws cloudformation describe-stacks \
   --stack-name AwsCostsStack \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
   --output text)
 
-API_KEY=$(aws cloudformation describe-stacks \
+# Get the API key ID from stack outputs
+API_KEY_ID=$(aws cloudformation describe-stacks \
   --stack-name AwsCostsStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`InitialApiKey`].OutputValue' \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiKeyId`].OutputValue' \
+  --output text)
+
+# Get the API key value from API Gateway
+API_KEY=$(aws apigateway get-api-key \
+  --api-key $API_KEY_ID \
+  --include-value \
+  --query 'value' \
   --output text)
 
 # Trigger daily report (saved to S3 only)
@@ -247,57 +285,91 @@ curl -X POST $API_ENDPOINT \
 
 ## 🔑 API Key Management
 
-The API requires authentication using API keys to prevent unauthorized access.
+The API requires authentication using native API Gateway keys with usage plans to prevent unauthorized access.
 
 ### Retrieving Your API Key
 
-#### Method 1: AWS Console (Easiest)
-
-1. Go to [AWS Console → API Gateway](https://console.aws.amazon.com/apigateway/home)
-2. Select your API (`cost-report-api`)
-3. In the left sidebar, click **"API Keys"**
-4. View and manage all API keys
-5. Direct URL: `https://console.aws.amazon.com/apigateway/home?region=us-east-1#/api-keys`
-   _(Replace `us-east-1` with your region)_
-
-#### Method 2: Stack Outputs (First Deployment Only)
+#### Method 1: AWS CLI (Recommended)
 
 ```bash
-aws cloudformation describe-stacks \
+# Get the API key ID from stack outputs
+API_KEY_ID=$(aws cloudformation describe-stacks \
   --stack-name AwsCostsStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`InitialApiKey`].OutputValue' \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiKeyId`].OutputValue' \
+  --output text)
+
+# Get the API key value
+aws apigateway get-api-key \
+  --api-key $API_KEY_ID \
+  --include-value \
+  --query 'value' \
   --output text
 ```
 
-### Adding Additional API Keys
+#### Method 2: AWS Console (Easiest)
 
-API keys are stored as environment variables in the Lambda authorizer. To add additional keys:
+1. Go to [AWS Console → API Gateway](https://console.aws.amazon.com/apigateway/home)
+2. Click **"API Keys"** in the left sidebar
+3. Find key named `cost-reporter-api-key-{unique-id}` (where `{unique-id}` is an 8-character hash)
+4. Click **"Show"** to reveal the key value
+5. Direct URL: `https://console.aws.amazon.com/apigateway/home?region=us-east-1#/api-keys`
+   _(Replace `us-east-1` with your region)_
 
-1. Update the CDK stack to include multiple keys (comma-separated):
+### Creating Additional API Keys
 
-```typescript
-// In lib/aws-costs-stack.ts, update the environment variable:
-environment: {
-  API_KEYS: `${initialApiKey},ak_live_second_key,ak_live_third_key`,
-}
-```
+You can create additional API keys through the AWS Console or CLI:
 
-2. Redeploy the stack:
+#### Via Console:
+1. Go to API Gateway → API Keys → **Create API Key**
+2. Name it (e.g., `cost-reporter-api-key-2`)
+3. Add it to the usage plan named `cost-reporter-usage-plan-{unique-id}`
 
+#### Via CLI:
 ```bash
-npm run build && cdk deploy
+# Create new API key
+NEW_KEY_ID=$(aws apigateway create-api-key \
+  --name cost-reporter-api-key-2 \
+  --enabled \
+  --query 'id' \
+  --output text)
+
+# Get usage plan ID (replace {unique-id} with your stack's unique ID)
+USAGE_PLAN_ID=$(aws apigateway get-usage-plans \
+  --query 'items[?name==`cost-reporter-usage-plan-{unique-id}`].id' \
+  --output text)
+
+# Associate key with usage plan
+aws apigateway create-usage-plan-key \
+  --usage-plan-id $USAGE_PLAN_ID \
+  --key-id $NEW_KEY_ID \
+  --key-type API_KEY
 ```
 
 ### Rotating API Keys
 
-1. Generate a new API key
-2. Add it to the Lambda environment variable (comma-separated with existing keys)
-3. Deploy the updated stack
-4. Update your applications to use the new key
-5. Remove the old key from the environment variable
-6. Redeploy to complete rotation
+1. Create a new API key (see above)
+2. Add it to the usage plan
+3. Update your applications to use the new key
+4. Once migration is complete, disable or delete the old key:
 
-**Note**: Key rotation requires redeployment since keys are stored in environment variables. This is a cost-free approach ($0/month).
+```bash
+# Disable old key
+aws apigateway update-api-key \
+  --api-key <OLD_KEY_ID> \
+  --patch-operations op=replace,path=/enabled,value=false
+
+# Or delete it
+aws apigateway delete-api-key --api-key <OLD_KEY_ID>
+```
+
+### Usage Plan Limits
+
+Default limits for the API:
+- **Rate Limit**: 5 requests/second
+- **Burst Limit**: 10 requests
+- **Monthly Quota**: 1000 requests/month
+
+Modify these limits in [lib/aws-costs-stack.ts](lib/aws-costs-stack.ts) under the usage plan configuration.
 
 ## 📊 Report Formats
 
@@ -306,7 +378,7 @@ npm run build && cdk deploy
 All reports are automatically saved to S3 with the following structure:
 
 ```
-s3://aws-cost-reports-{account-id}/
+s3://aws-cost-reports-{unique-id}/
 ├── 2025/
 │   ├── 12/
 │   │   ├── 24/
@@ -314,6 +386,8 @@ s3://aws-cost-reports-{account-id}/
 │   │   │   ├── weekly-2024-12-18-to-2025-12-24.json
 │   │   │   └── monthly-2025-11-01-to-2025-12-01.json
 ```
+
+**Note**: `{unique-id}` is a stable 8-character hash generated by CDK based on the stack's construct path. This ensures unique resource names while remaining consistent across deployments.
 
 Reports are retained for 365 days with automatic lifecycle management.
 
@@ -338,24 +412,23 @@ JSON format matching the API response structure above. Includes full cost breakd
 
 Expected monthly costs (assuming default configuration):
 
-| Service                | Usage                          | Monthly Cost       |
-| ---------------------- | ------------------------------ | ------------------ |
-| Lambda (Cost Reporter) | ~93 invocations/month × 30s    | $0.20              |
-| Lambda (Authorizer)    | ~20 invocations × <1s (cached) | $0.00 (free tier)  |
-| S3                     | 365 files × 10KB               | $0.25              |
-| Cost Explorer API      | 93 calls × $0.01               | $0.93              |
-| HTTP API Gateway       | ~20 API requests/month         | $0.00 (negligible) |
-| CloudWatch Logs        | ~500MB/month                   | $0.50              |
-| SNS                    | Email notifications            | $0.00 (free tier)  |
-| **Total**              |                                | **~$2.90/month**   |
+| Service                | Usage                       | Monthly Cost       |
+| ---------------------- | --------------------------- | ------------------ |
+| Lambda (Cost Reporter) | ~93 invocations/month × 30s | $0.20              |
+| S3                     | 365 files × 10KB            | $0.25              |
+| Cost Explorer API      | 93 calls × $0.01            | $0.93              |
+| REST API Gateway       | ~20 API requests/month      | $0.07              |
+| CloudWatch Logs        | ~500MB/month                | $0.50              |
+| SNS                    | Email notifications         | $0.00 (free tier)  |
+| **Total**              |                             | **~$2.95/month**   |
 
 **Optimizations Applied:**
 
-- ✅ Environment variables for API keys (vs Secrets Manager saves $0.40/month)
-- ✅ Lambda authorizer with 5-minute result caching (covered by free tier)
-- ✅ HTTP API Gateway (3.5x cheaper than REST API)
+- ✅ Native API Gateway authentication (no Lambda authorizer needed)
+- ✅ Usage plans with monthly quotas (1000 requests/month included)
 - ✅ ARM64 Lambda architecture (20% cost reduction)
 - ✅ Credits tracking separates usage from promotional credits
+- ✅ Efficient CloudWatch logging (INFO level only)
 
 ## 🛠️ Development
 
@@ -406,17 +479,19 @@ cdk deploy
 ## 🔒 Security Best Practices
 
 1. **IAM Permissions**: The Lambda function has minimal permissions (Cost Explorer read, SNS publish, S3 write)
-2. **API Security**: ✅ API key authentication is enabled by default with Lambda authorizer
+2. **API Security**: ✅ Native API Gateway key authentication with usage plans
 3. **API Key Management**:
-   - **Never commit API keys to Git** - always use environment variables or secret management
-   - **Store keys securely** - use AWS Secrets Manager or environment variables only
-   - **Rotate keys regularly** - recommended every 90 days
-   - **Monitor unauthorized access** - set up CloudWatch alarms for failed auth attempts
-   - **Use separate keys** - different keys for different environments (production, staging, etc.)
-4. **Rate Limiting**: API Gateway throttling is configured at 5 req/sec to prevent abuse
-5. **Secrets Management**: For sensitive webhook URLs, use AWS Secrets Manager instead of environment variables
-6. **S3 Encryption**: All reports are encrypted at rest with S3 managed encryption
-7. **VPC**: Lambda doesn't require VPC access (uses AWS service APIs only)
+   - **Never commit API keys to Git** - always retrieve from API Gateway when needed
+   - **Store keys securely** - use environment variables or secret management for applications
+   - **Rotate keys regularly** - recommended every 90 days (can be done without redeployment)
+   - **Monitor usage** - API Gateway provides built-in usage metrics per key
+   - **Use separate keys** - create different keys for different environments (production, staging, etc.)
+   - **Disable compromised keys immediately** - no redeployment needed
+4. **Rate Limiting**: API Gateway throttling (5 req/sec) + monthly quota (1000 requests/month)
+5. **Usage Plans**: Prevents abuse with automatic quota enforcement
+6. **Secrets Management**: For sensitive webhook URLs, use AWS Secrets Manager instead of environment variables
+7. **S3 Encryption**: All reports are encrypted at rest with S3 managed encryption
+8. **VPC**: Lambda doesn't require VPC access (uses AWS service APIs only)
 
 ## 🐛 Troubleshooting
 
@@ -425,7 +500,8 @@ cdk deploy
 1. **Check CloudWatch Logs**:
 
    ```bash
-   aws logs tail /aws/lambda/aws-cost-reporter --follow
+   # Replace {unique-id} with your stack's unique ID
+   aws logs tail /aws/lambda/aws-cost-reporter-{unique-id} --follow
    ```
 
 2. **Verify EventBridge Rules**:
@@ -436,7 +512,8 @@ cdk deploy
 
 3. **Check Dead Letter Queue**:
    ```bash
-   aws sqs receive-message --queue-url $(aws sqs get-queue-url --queue-name cost-reporter-dlq --query QueueUrl --output text)
+   # Replace {unique-id} with your stack's unique ID
+   aws sqs receive-message --queue-url $(aws sqs get-queue-url --queue-name cost-reporter-dlq-{unique-id} --query QueueUrl --output text)
    ```
 
 ### Email Not Received

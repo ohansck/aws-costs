@@ -11,6 +11,71 @@ function formatPeriodLabel(period: ReportPeriod, start: string, end: string): st
   }
 }
 
+export function formatCostReportAsPlainText(report: CostReport): string {
+  // Sort usage breakdown by cost
+  const sortedUsageBreakdown = [...report.usageBreakdown].sort(
+    (a, b) => parseFloat(b.cost.amount) - parseFloat(a.cost.amount)
+  );
+
+  // Sort credits breakdown by credit amount
+  const sortedCreditsBreakdown = [...report.creditsBreakdown].sort(
+    (a, b) => parseFloat(b.creditAmount.amount) - parseFloat(a.creditAmount.amount)
+  );
+
+  const periodLabel = formatPeriodLabel(report.period, report.startDate, report.endDate);
+
+  let plainText = `
+================================================================================
+                          AWS COST REPORT
+================================================================================
+
+${periodLabel}
+Generated: ${new Date(report.generatedAt).toLocaleString()}
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+
+Total Usage Cost:        $${report.totalUsageCost.amount}
+Total Credits Applied:  -$${report.totalCreditsApplied.amount}
+                        ─────────────────
+NET AMOUNT:             $${report.totalCost.amount}
+
+--------------------------------------------------------------------------------
+USAGE COSTS BY SERVICE
+--------------------------------------------------------------------------------
+`;
+
+  // Add usage breakdown
+  sortedUsageBreakdown.forEach((item) => {
+    const cost = parseFloat(item.cost.amount);
+    const costStr = cost.toFixed(2).padStart(10);
+    plainText += `\n${item.service.padEnd(35)} ${item.region.padEnd(15)} $${costStr}`;
+  });
+
+  // Add credits section if there are any
+  if (sortedCreditsBreakdown.length > 0) {
+    plainText += `
+
+--------------------------------------------------------------------------------
+AWS CREDITS APPLIED
+--------------------------------------------------------------------------------
+`;
+    sortedCreditsBreakdown.forEach((item) => {
+      const creditAmount = Math.abs(parseFloat(item.creditAmount.amount));
+      const creditStr = creditAmount.toFixed(2).padStart(10);
+      plainText += `\n${item.service.padEnd(35)} ${item.region.padEnd(15)} -$${creditStr}`;
+    });
+  }
+
+  plainText += `
+
+================================================================================
+`;
+
+  return plainText;
+}
+
 function getCostClass(cost: number): string {
   if (cost >= 100) return 'cost-high';
   if (cost >= 10) return 'cost-medium';

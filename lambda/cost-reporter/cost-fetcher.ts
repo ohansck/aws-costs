@@ -2,7 +2,7 @@ import {
   CostExplorerClient,
   GetCostAndUsageCommand,
 } from '@aws-sdk/client-cost-explorer';
-import { CostReport, ReportPeriod, DateRange, CostBreakdownItem } from './types';
+import { CostReport, ReportPeriod, DateRange, CostBreakdownItem, RecordType, CreditBreakdownItem } from './types';
 
 const ce = new CostExplorerClient({
   region: 'us-east-1',
@@ -61,7 +61,8 @@ export async function fetchCostReport(period: ReportPeriod, isScheduledEvent: bo
 
   console.log(`Fetching ${period} cost report for ${dateRange.start} to ${dateRange.end}`);
 
-  const command = new GetCostAndUsageCommand({
+  // Fetch usage costs (filter for Usage record type)
+  const usageCommand = new GetCostAndUsageCommand({
     TimePeriod: {
       Start: dateRange.start,
       End: dateRange.end,
@@ -78,38 +79,150 @@ export async function fetchCostReport(period: ReportPeriod, isScheduledEvent: bo
         Key: 'REGION',
       },
     ],
+    Filter: {
+      Dimensions: {
+        Key: 'RECORD_TYPE',
+        Values: ['Usage'],
+      },
+    },
   });
 
-  const response = await ce.send(command);
+  // Fetch credit costs (filter for Credit record type)
+  const creditsCommand = new GetCostAndUsageCommand({
+    TimePeriod: {
+      Start: dateRange.start,
+      End: dateRange.end,
+    },
+    Granularity: 'DAILY',
+    Metrics: ['UnblendedCost'],
+    GroupBy: [
+      {
+        Type: 'DIMENSION',
+        Key: 'SERVICE',
+      },
+      {
+        Type: 'DIMENSION',
+        Key: 'REGION',
+      },
+    ],
+    Filter: {
+      Dimensions: {
+        Key: 'RECORD_TYPE',
+        Values: ['Credit'],
+      },
+    },
+  });
 
-  const groups = response.ResultsByTime?.[0]?.Groups ?? [];
+  // Execute both queries in parallel
+  const [usageResponse, creditsResponse] = await Promise.all([
+    ce.send(usageCommand),
+    ce.send(creditsCommand),
+  ]);
 
-  const breakdown: CostBreakdownItem[] = groups.map((g) => ({
-    service: g.Keys?.[0] ?? 'Unknown',
-    region: g.Keys?.[1] ?? 'Unknown',
+  // Aggregate usage results across all days
+  const usageMap = new Map<string, { service: string; region: string; amount: number; unit: string }>();
+
+  for (const timeEntry of usageResponse.ResultsByTime ?? []) {
+    for (const group of timeEntry.Groups ?? []) {
+      const service = group.Keys?.[0] ?? 'Unknown';
+      const region = group.Keys?.[1] ?? 'Unknown';
+      const key = `${service}::${region}`;
+      const amount = parseFloat(group.Metrics?.UnblendedCost?.Amount ?? '0');
+      const unit = group.Metrics?.UnblendedCost?.Unit ?? 'USD';
+
+      const existing = usageMap.get(key);
+      if (existing) {
+        existing.amount += amount;
+      } else {
+        usageMap.set(key, { service, region, amount, unit });
+      }
+    }
+  }
+
+  const usageBreakdown: CostBreakdownItem[] = Array.from(usageMap.values()).map((item) => ({
+    service: item.service,
+    region: item.region,
+    recordType: 'Usage' as RecordType,
     cost: {
-      amount: g.Metrics?.UnblendedCost?.Amount ?? '0',
-      unit: g.Metrics?.UnblendedCost?.Unit ?? 'USD',
+      amount: item.amount.toString(),
+      unit: item.unit,
     },
   }));
 
-  const totalCost = breakdown.reduce((sum, item) => {
+  // Aggregate credits results across all days
+  const creditsMap = new Map<string, { service: string; region: string; amount: number; unit: string }>();
+
+  for (const timeEntry of creditsResponse.ResultsByTime ?? []) {
+    for (const group of timeEntry.Groups ?? []) {
+      const service = group.Keys?.[0] ?? 'Unknown';
+      const region = group.Keys?.[1] ?? 'Unknown';
+      const key = `${service}::${region}`;
+      const amount = parseFloat(group.Metrics?.UnblendedCost?.Amount ?? '0');
+      const unit = group.Metrics?.UnblendedCost?.Unit ?? 'USD';
+
+      const existing = creditsMap.get(key);
+      if (existing) {
+        existing.amount += amount;
+      } else {
+        creditsMap.set(key, { service, region, amount, unit });
+      }
+    }
+  }
+
+  const creditsBreakdown: CreditBreakdownItem[] = Array.from(creditsMap.values()).map((item) => ({
+    service: item.service,
+    region: item.region,
+    creditAmount: {
+      amount: item.amount.toString(),
+      unit: item.unit,
+    },
+  }));
+
+  // Combine for full breakdown (for backwards compatibility)
+  const breakdown: CostBreakdownItem[] = [
+    ...usageBreakdown,
+    ...creditsBreakdown.map(c => ({
+      service: c.service,
+      region: c.region,
+      recordType: 'Credit' as RecordType,
+      cost: c.creditAmount,
+    })),
+  ];
+
+  // Calculate totals
+  const totalUsageCost = usageBreakdown.reduce((sum, item) => {
     return sum + parseFloat(item.cost.amount);
   }, 0);
+
+  const totalCreditsApplied = creditsBreakdown.reduce((sum, item) => {
+    return sum + Math.abs(parseFloat(item.creditAmount.amount));
+  }, 0);
+
+  const netTotalCost = totalUsageCost - totalCreditsApplied;
 
   const report: CostReport = {
     period,
     startDate: dateRange.start,
     endDate: dateRange.end,
+    totalUsageCost: {
+      amount: totalUsageCost.toFixed(2),
+      unit: 'USD',
+    },
+    totalCreditsApplied: {
+      amount: totalCreditsApplied.toFixed(2),
+      unit: 'USD',
+    },
     totalCost: {
-      amount: totalCost.toFixed(2),
+      amount: netTotalCost.toFixed(2),
       unit: 'USD',
     },
     breakdown,
+    usageBreakdown,
+    creditsBreakdown,
     generatedAt: new Date().toISOString(),
   };
 
-  console.log(`Cost report generated: ${report.breakdown.length} items, total: $${report.totalCost.amount}`);
+  console.log(`Cost report generated: ${report.breakdown.length} items (${usageBreakdown.length} usage, ${creditsBreakdown.length} credits), usage: $${report.totalUsageCost.amount}, credits: $${report.totalCreditsApplied.amount}, net: $${report.totalCost.amount}`);
 
   return report;
 }

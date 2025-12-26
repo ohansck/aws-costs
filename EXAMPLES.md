@@ -504,19 +504,90 @@ When EventBridge scheduled rules trigger the Lambda function, the report data is
 
 ## Error Response Format
 
-When an error occurs, the API returns:
+### Validation Errors (HTTP 400)
+
+When input validation fails, the API returns structured error details using Zod validation:
 
 ```json
 {
   "success": false,
-  "error": "Invalid email format"
+  "error": "Validation failed",
+  "details": [
+    {
+      "field": "period",
+      "message": "Period must be one of: day, week, month"
+    }
+  ]
+}
+```
+
+**Example: Invalid Email Format**
+
+```json
+{
+  "success": false,
+  "error": "Validation failed",
+  "details": [
+    {
+      "field": "email",
+      "message": "Invalid email format"
+    }
+  ]
+}
+```
+
+**Example: Multiple Validation Errors**
+
+```json
+{
+  "success": false,
+  "error": "Validation failed",
+  "details": [
+    {
+      "field": "period",
+      "message": "Period must be one of: day, week, month"
+    },
+    {
+      "field": "email",
+      "message": "Invalid email format"
+    }
+  ]
+}
+```
+
+### Other Errors
+
+**Invalid JSON (HTTP 400)**
+
+```json
+{
+  "success": false,
+  "error": "Invalid JSON in request body"
+}
+```
+
+**Unknown Event Type (HTTP 400)**
+
+```json
+{
+  "success": false,
+  "error": "Unknown event type"
+}
+```
+
+**Internal Server Error (HTTP 500)**
+
+```json
+{
+  "success": false,
+  "error": "Internal server error"
 }
 ```
 
 **Status Codes:**
 
-- `400 Bad Request`: Invalid input (e.g., invalid email, malformed JSON)
-- `500 Internal Server Error`: Server-side error (generic message for security)
+- `400 Bad Request`: Validation errors, invalid JSON, or unknown event type
+- `500 Internal Server Error`: Server-side errors (generic message for security)
 
 ---
 

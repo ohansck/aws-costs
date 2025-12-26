@@ -21,7 +21,9 @@ All API responses follow this general structure when successful:
 ```json
 {
   "success": true,
-  "report": { /* Cost report data */ },
+  "report": {
+    /* Cost report data */
+  },
   "s3Location": "s3://bucket/path/to/report.json",
   "webhookSent": true,
   "emailSent": false
@@ -101,6 +103,7 @@ When AWS promotional credits are applied to your account, the response includes 
 ```
 
 **Key Points:**
+
 - `totalUsageCost`: Total AWS service usage before credits
 - `totalCreditsApplied`: Total promotional credits applied
 - `totalCost`: Net amount (usage - credits)
@@ -172,6 +175,7 @@ When no credits are applied to your account:
 ```
 
 **Key Points:**
+
 - `totalCost` equals `totalUsageCost` when no credits
 - `creditsBreakdown` is an empty array
 - Only `Usage` recordType in breakdown
@@ -219,8 +223,12 @@ Weekly reports aggregate 7 days of cost data:
         }
       }
     ],
-    "usageBreakdown": [ /* ... */ ],
-    "creditsBreakdown": [ /* ... */ ],
+    "usageBreakdown": [
+      /* ... */
+    ],
+    "creditsBreakdown": [
+      /* ... */
+    ],
     "generatedAt": "2025-12-25T08:00:31.294Z"
   },
   "s3Location": "s3://aws-cost-reports-abc12de3/2025/12/24/weekly-2025-12-17-to-2025-12-24.json",
@@ -272,8 +280,12 @@ Monthly reports cover an entire calendar month:
         }
       }
     ],
-    "usageBreakdown": [ /* ... */ ],
-    "creditsBreakdown": [ /* ... */ ],
+    "usageBreakdown": [
+      /* ... */
+    ],
+    "creditsBreakdown": [
+      /* ... */
+    ],
     "generatedAt": "2025-12-01T08:00:31.294Z"
   },
   "s3Location": "s3://aws-cost-reports-abc12de3/2025/12/01/monthly-2025-11-01-to-2025-12-01.json",
@@ -415,6 +427,7 @@ When EventBridge scheduled rules trigger the Lambda function, the report data is
 ```
 
 **Key Differences from API Response:**
+
 - No `success` field
 - No `s3Location`, `webhookSent`, or `emailSent` metadata
 - Direct report object (not wrapped)
@@ -426,28 +439,28 @@ When EventBridge scheduled rules trigger the Lambda function, the report data is
 
 ### Top-Level Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `success` | boolean | Indicates if the API request was successful (API responses only) |
-| `report` | object | The cost report data (API responses only) |
-| `s3Location` | string | S3 URI where the report was saved (API responses only) |
+| Field         | Type    | Description                                                            |
+| ------------- | ------- | ---------------------------------------------------------------------- |
+| `success`     | boolean | Indicates if the API request was successful (API responses only)       |
+| `report`      | object  | The cost report data (API responses only)                              |
+| `s3Location`  | string  | S3 URI where the report was saved (API responses only)                 |
 | `webhookSent` | boolean | Whether the report was sent to a webhook endpoint (API responses only) |
-| `emailSent` | boolean | Whether the report was sent via SNS email (API responses only) |
+| `emailSent`   | boolean | Whether the report was sent via SNS email (API responses only)         |
 
 ### Report Object Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `period` | string | Report period: `"day"`, `"week"`, or `"month"` |
-| `startDate` | string | Start date in ISO format (YYYY-MM-DD) |
-| `endDate` | string | End date in ISO format (YYYY-MM-DD) |
-| `totalUsageCost` | object | Total AWS usage cost before credits |
-| `totalCreditsApplied` | object | Total promotional credits applied |
-| `totalCost` | object | Net cost (usage - credits) |
-| `breakdown` | array | Combined array of all costs (usage + credits) |
-| `usageBreakdown` | array | Array of only usage costs (filtered for convenience) |
-| `creditsBreakdown` | array | Array of only credits (filtered for convenience) |
-| `generatedAt` | string | ISO 8601 timestamp when the report was generated |
+| Field                 | Type   | Description                                          |
+| --------------------- | ------ | ---------------------------------------------------- |
+| `period`              | string | Report period: `"day"`, `"week"`, or `"month"`       |
+| `startDate`           | string | Start date in ISO format (YYYY-MM-DD)                |
+| `endDate`             | string | End date in ISO format (YYYY-MM-DD)                  |
+| `totalUsageCost`      | object | Total AWS usage cost before credits                  |
+| `totalCreditsApplied` | object | Total promotional credits applied                    |
+| `totalCost`           | object | Net cost (usage - credits)                           |
+| `breakdown`           | array  | Combined array of all costs (usage + credits)        |
+| `usageBreakdown`      | array  | Array of only usage costs (filtered for convenience) |
+| `creditsBreakdown`    | array  | Array of only credits (filtered for convenience)     |
+| `generatedAt`         | string | ISO 8601 timestamp when the report was generated     |
 
 ### Cost Object Structure
 
@@ -501,75 +514,9 @@ When an error occurs, the API returns:
 ```
 
 **Status Codes:**
+
 - `400 Bad Request`: Invalid input (e.g., invalid email, malformed JSON)
 - `500 Internal Server Error`: Server-side error (generic message for security)
-
----
-
-## Usage Examples
-
-### Parsing the Response
-
-```typescript
-// API Response
-const response = await fetch(apiEndpoint, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'x-api-key': apiKey
-  },
-  body: JSON.stringify({ period: 'day' })
-});
-
-const data = await response.json();
-
-if (data.success) {
-  console.log(`Total Cost: $${data.report.totalCost.amount}`);
-  console.log(`Usage: $${data.report.totalUsageCost.amount}`);
-  console.log(`Credits: $${data.report.totalCreditsApplied.amount}`);
-  console.log(`Saved to: ${data.s3Location}`);
-}
-```
-
-### Processing Breakdown by Service
-
-```typescript
-// Group costs by service
-const costsByService = data.report.usageBreakdown.reduce((acc, item) => {
-  if (!acc[item.service]) {
-    acc[item.service] = 0;
-  }
-  acc[item.service] += parseFloat(item.cost.amount);
-  return acc;
-}, {});
-
-// Find top 5 most expensive services
-const topServices = Object.entries(costsByService)
-  .sort(([, a], [, b]) => b - a)
-  .slice(0, 5)
-  .map(([service, cost]) => ({ service, cost: cost.toFixed(2) }));
-
-console.log('Top 5 Services:', topServices);
-```
-
-### Webhook Integration
-
-If you've configured a webhook endpoint, you'll receive the report object (scheduler format) directly:
-
-```typescript
-// Express.js webhook handler
-app.post('/webhook/aws-costs', (req, res) => {
-  const report = req.body;
-
-  console.log(`Received ${report.period} report`);
-  console.log(`Date range: ${report.startDate} to ${report.endDate}`);
-  console.log(`Total cost: $${report.totalCost.amount}`);
-
-  // Process the report...
-
-  res.status(200).send('OK');
-});
-```
 
 ---
 

@@ -22,3 +22,5 @@ resultFormats
 *.local.json
 *.local.md
 local
+
+.env

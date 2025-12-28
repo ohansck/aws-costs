@@ -28,6 +28,7 @@
     "@aws-sdk/client-sns": "^3.712.0",
     "aws-cdk-lib": "2.232.1",
     "constructs": "^10.0.0",
+    "dotenv": "^17.2.3",
     "zod": "^3.23.8"
   }
 }

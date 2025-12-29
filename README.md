@@ -17,6 +17,7 @@
 - **🌍 Multi-Region**: Automatic cost breakdown by AWS service and region
 - **🚀 Manual Triggers**: On-demand reports via secured REST API
 - **🔐 API Key Security**: Native API Gateway key authentication with usage plans
+- **✅ Type-Safe Validation**: Zod-based input validation with detailed error messages
 - **💳 Credits Tracking**: Separate tracking of usage costs vs. AWS promotional credits
 - **📈 Readable Reports**: Well-formatted plain text emails with organized cost breakdowns
 - **⚡ Rate Limiting**: 5 requests/second throttling + 1000 requests/month quota
@@ -257,12 +258,16 @@ curl -X POST $API_ENDPOINT \
 
 ```json
 {
-  "period": "day" | "week" | "month",
-  "email": "optional@example.com"
+  "period": "day" | "week" | "month",  // Required. Must be one of these values
+  "email": "optional@example.com"      // Optional. Must be valid email format if provided
 }
 ```
 
-**Response**:
+**Validation Rules**:
+- `period`: **Required**. Must be exactly one of: `"day"`, `"week"`, or `"month"`
+- `email`: **Optional**. Must be a valid email format if provided
+
+**Success Response** (HTTP 200):
 
 ```json
 {
@@ -280,6 +285,37 @@ curl -X POST $API_ENDPOINT \
   "s3Location": "s3://bucket/2025/12/24/daily-2025-12-24.json",
   "webhookSent": true,
   "emailSent": false
+}
+```
+
+**Validation Error Response** (HTTP 400):
+
+```json
+{
+  "success": false,
+  "error": "Validation failed",
+  "details": [
+    {
+      "field": "period",
+      "message": "Period must be one of: day, week, month"
+    }
+  ]
+}
+```
+
+**Other Error Responses**:
+
+```json
+// Invalid JSON (HTTP 400)
+{
+  "success": false,
+  "error": "Invalid JSON in request body"
+}
+
+// Server error (HTTP 500)
+{
+  "success": false,
+  "error": "Internal server error"
 }
 ```
 

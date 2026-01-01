@@ -159,6 +159,7 @@
 All resources in this stack include a unique 8-character identifier (e.g., `abc12de3`) that remains stable across deployments. You can find it in several ways:
 
 ### Method 1: From Stack Outputs (Recommended)
+
 ```bash
 # Get any output that includes resource names
 aws cloudformation describe-stacks \
@@ -170,10 +171,12 @@ aws cloudformation describe-stacks \
 ```
 
 ### Method 2: From AWS Console
+
 1. Check any resource name in API Gateway, Lambda, or S3
 2. Look for the suffix after the last hyphen (e.g., `aws-cost-reporter-abc12de3` → `abc12de3`)
 
 ### Method 3: From CloudFormation Resources
+
 ```bash
 aws cloudformation describe-stack-resources \
   --stack-name AwsCostsStack \
@@ -264,6 +267,7 @@ curl -X POST $API_ENDPOINT \
 ```
 
 **Validation Rules**:
+
 - `period`: **Required**. Must be exactly one of: `"day"`, `"week"`, or `"month"`
 - `email`: **Optional**. Must be a valid email format if provided
 
@@ -356,11 +360,13 @@ aws apigateway get-api-key \
 You can create additional API keys through the AWS Console or CLI:
 
 #### Via Console:
+
 1. Go to API Gateway → API Keys → **Create API Key**
 2. Name it (e.g., `cost-reporter-api-key-2`)
 3. Add it to the usage plan named `cost-reporter-usage-plan-{unique-id}`
 
 #### Via CLI:
+
 ```bash
 # Create new API key
 NEW_KEY_ID=$(aws apigateway create-api-key \
@@ -401,6 +407,7 @@ aws apigateway delete-api-key --api-key <OLD_KEY_ID>
 ### Usage Plan Limits
 
 Default limits for the API:
+
 - **Rate Limit**: 5 requests/second
 - **Burst Limit**: 10 requests
 - **Monthly Quota**: 1000 requests/month
@@ -447,15 +454,15 @@ JSON format matching the API response structure above. Includes full cost breakd
 
 Expected monthly costs (assuming default configuration):
 
-| Service                | Usage                       | Monthly Cost       |
-| ---------------------- | --------------------------- | ------------------ |
-| Lambda (Cost Reporter) | ~93 invocations/month × 30s | $0.20              |
-| S3                     | 365 files × 10KB            | $0.25              |
-| Cost Explorer API      | 93 calls × $0.01            | $0.93              |
-| REST API Gateway       | ~20 API requests/month      | $0.07              |
-| CloudWatch Logs        | ~500MB/month                | $0.50              |
-| SNS                    | Email notifications         | $0.00 (free tier)  |
-| **Total**              |                             | **~$2.95/month**   |
+| Service                | Usage                       | Monthly Cost      |
+| ---------------------- | --------------------------- | ----------------- |
+| Lambda (Cost Reporter) | ~93 invocations/month × 30s | $0.20             |
+| S3                     | 365 files × 10KB            | $0.25             |
+| Cost Explorer API      | 93 calls × $0.01            | $0.93             |
+| REST API Gateway       | ~20 API requests/month      | $0.07             |
+| CloudWatch Logs        | ~500MB/month                | $0.50             |
+| SNS                    | Email notifications         | $0.00 (free tier) |
+| **Total**              |                             | **~$2.95/month**  |
 
 **Optimizations Applied:**
 
@@ -579,8 +586,6 @@ This is an open-source project, but if you need:
 - **Training** for your team
 
 **Get in touch**: [king.ohaneme@gmail.com](mailto:king.ohaneme@gmail.com)
-
-I offer consulting services to help organizations optimize their AWS costs and automate their cloud operations.
 
 ---
 
